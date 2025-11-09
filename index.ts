@@ -321,13 +321,36 @@ function addResult(result: ResearchResult): void {
 // Safe page navigation with error handling and bot detection
 async function safePageNavigation(page: Page, url: string): Promise<void> {
     try {
-        // Step 1: Set cookies to bypass consent banner
-        await page.context().addCookies([{
-            name: 'CONSENT',
-            value: 'YES+',
-            domain: '.google.com',
-            path: '/'
-        }]);
+        // Step 1: Set cookies to bypass consent banner and simulate returning user
+        await page.context().addCookies([
+            {
+                name: 'CONSENT',
+                value: 'YES+cb.20210720-07-p0.en+FX+410',
+                domain: '.google.com',
+                path: '/'
+            },
+            {
+                name: 'NID',
+                value: `511=${Math.random().toString(36).substring(2)}`,
+                domain: '.google.com',
+                path: '/',
+                expires: Math.floor(Date.now() / 1000) + 15552000 // 180 days
+            },
+            {
+                name: '1P_JAR',
+                value: new Date().toISOString().slice(0, 10),
+                domain: '.google.com',
+                path: '/',
+                expires: Math.floor(Date.now() / 1000) + 2592000 // 30 days
+            },
+            {
+                name: 'AEC',
+                value: `AUEFqZ${Math.random().toString(36).substring(2, 15)}`,
+                domain: '.google.com',
+                path: '/',
+                expires: Math.floor(Date.now() / 1000) + 15552000 // 180 days
+            }
+        ]);
 
         // Step 2: Initial navigation
         const response = await page.goto(url, {
@@ -837,7 +860,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                     await randomDelay(500, 1000);
                     await simulateHumanBehavior(page);
 
-                    // Step 5: Extract search results
+                    // Step 5: Check for bot detection before extracting results
+                    const pageCheck = await page.evaluate(() => {
+                        return {
+                            title: document.title,
+                            hasCaptcha: !!document.querySelector('#captcha-form') ||
+                                       !!document.querySelector('iframe[src*="recaptcha"]') ||
+                                       document.body.innerText.includes('unusual traffic'),
+                            hasResults: document.querySelectorAll('div.g').length > 0,
+                            bodyText: document.body.innerText.substring(0, 500)
+                        };
+                    });
+
+                    if (pageCheck.hasCaptcha) {
+                        throw new Error('Bot detection triggered - CAPTCHA detected');
+                    }
+
+                    if (!pageCheck.hasResults) {
+                        throw new Error(`No search results found. Page title: "${pageCheck.title}". Body preview: ${pageCheck.bodyText}`);
+                    }
+
+                    // Step 6: Extract search results
                     const searchResults = await withRetry(async () => {
                         const results = await page.evaluate(() => {
                             // Find all search result containers
@@ -1558,26 +1601,40 @@ async function ensureBrowser(): Promise<Page> {
 
         page = await context.newPage();
 
-        // Enhanced header handling
+        // Enhanced header handling with referer support
         await page.route('**', async (route) => {
             const request = route.request();
+            const url = new URL(request.url());
+
             const headers: Record<string, string> = {
                 ...request.headers(),
                 'sec-ch-ua': `"Not_A Brand";v="8", "Chromium";v="${chromeVersion}", "Google Chrome";v="${chromeVersion}"`,
                 'sec-ch-ua-mobile': '?0',
                 'sec-ch-ua-platform': '"Windows"',
                 'sec-ch-ua-platform-version': '"10.0.0"',
+                'sec-ch-ua-full-version-list': `"Not_A Brand";v="8.0.0.0", "Chromium";v="${chromeVersion}.0.0.0", "Google Chrome";v="${chromeVersion}.0.0.0"`,
                 'sec-fetch-dest': request.resourceType() === 'document' ? 'document' : 'empty',
-                'sec-fetch-mode': 'navigate',
+                'sec-fetch-mode': request.resourceType() === 'document' ? 'navigate' : 'no-cors',
                 'sec-fetch-site': 'none',
                 'upgrade-insecure-requests': '1',
                 'accept-language': 'en-US,en;q=0.9',
-                'accept-encoding': 'gzip, deflate, br',
+                'accept-encoding': 'gzip, deflate, br, zstd',
+                'cache-control': 'max-age=0',
+                'dnt': '1',
             };
 
             // Add accept header based on resource type
             if (request.resourceType() === 'document') {
-                headers['accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
+                headers['accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7';
+            } else if (request.resourceType() === 'image') {
+                headers['accept'] = 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8';
+            } else if (request.resourceType() === 'script') {
+                headers['accept'] = '*/*';
+            }
+
+            // Add referer for same-origin requests
+            if (url.hostname.includes('google.com') && !headers['referer']) {
+                headers['referer'] = 'https://www.google.com/';
             }
 
             route.continue({ headers });
