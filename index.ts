@@ -219,6 +219,60 @@ const MAX_RESULTS_PER_SESSION = 100;  // Maximum number of results to store per 
 const MAX_RETRIES = 3;                // Maximum retry attempts for operations
 const RETRY_DELAY = 1000;             // Delay between retries in milliseconds
 
+// Stealth helper functions for randomization
+function getRandomUserAgent(): string {
+    // Use current Chrome versions (130-131)
+    const chromeVersion = 130 + Math.floor(Math.random() * 2);
+    const chromePatch = Math.floor(Math.random() * 1000);
+    const webkitVersion = 537 + Math.floor(Math.random() * 5);
+
+    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/${webkitVersion}.36 (KHTML, like Gecko) Chrome/${chromeVersion}.0.${chromePatch}.0 Safari/${webkitVersion}.36`;
+}
+
+function getRandomViewport(): { width: number; height: number } {
+    const viewports = [
+        { width: 1920, height: 1080 },
+        { width: 1366, height: 768 },
+        { width: 1536, height: 864 },
+        { width: 1440, height: 900 },
+        { width: 1280, height: 720 },
+    ];
+    return viewports[Math.floor(Math.random() * viewports.length)];
+}
+
+function getRandomDeviceScaleFactor(): number {
+    return [1, 1.25, 1.5, 2][Math.floor(Math.random() * 4)];
+}
+
+function getRandomChromeVersion(): string {
+    const version = 130 + Math.floor(Math.random() * 2);
+    return version.toString();
+}
+
+async function simulateHumanBehavior(page: Page): Promise<void> {
+    // Random mouse movements
+    const moveCount = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < moveCount; i++) {
+        const x = Math.floor(Math.random() * 800) + 100;
+        const y = Math.floor(Math.random() * 600) + 100;
+        await page.mouse.move(x, y);
+        await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
+    }
+
+    // Random scroll
+    await page.evaluate(() => {
+        window.scrollBy({
+            top: Math.floor(Math.random() * 300) + 100,
+            behavior: 'smooth'
+        });
+    });
+    await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 500));
+}
+
+async function randomDelay(min = 500, max = 1500): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, min + Math.random() * (max - min)));
+}
+
 // Generic retry mechanism for handling transient failures
 async function withRetry<T>(
     operation: () => Promise<T>,  // Operation to retry
@@ -724,6 +778,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                     // Step 1: Navigate to Google search page
                     await safePageNavigation(page, 'https://www.google.com');
 
+                    // Simulate human behavior
+                    await randomDelay(800, 1500);
+                    await simulateHumanBehavior(page);
+
                     // Step 2: Find and interact with search input
                     await withRetry(async () => {
                         // Wait for any search input element to appear
@@ -736,6 +794,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                             throw new Error('Search input not found - no matching selectors');
                         });
 
+                        // Random delay before interacting
+                        await randomDelay(300, 700);
+
                         // Find the actual search input element
                         const searchInput = await page.$('input[name="q"]') ||
                         await page.$('textarea[name="q"]') ||
@@ -746,11 +807,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                             throw new Error('Search input element not found after waiting');
                         }
 
-                        // Step 3: Enter search query
+                        // Step 3: Enter search query with human-like typing
+                        await searchInput.click();
+                        await randomDelay(100, 300);
                         await searchInput.click({ clickCount: 3 });  // Select all existing text
+                        await randomDelay(50, 150);
                         await searchInput.press('Backspace');        // Clear selected text
-                        await searchInput.type(query);               // Type new query
+                        await randomDelay(200, 400);
+
+                        // Type query with random delays between characters
+                        for (const char of query) {
+                            await searchInput.type(char);
+                            await randomDelay(50, 150);
+                        }
                     }, 3, 2000);  // Allow 3 retries with 2s delay
+
+                    // Random delay before submitting
+                    await randomDelay(400, 900);
 
                     // Step 4: Submit search and wait for results
                     await withRetry(async () => {
@@ -759,6 +832,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                                           page.waitForLoadState('networkidle', { timeout: 15000 }),
                         ]);
                     });
+
+                    // Simulate human behavior after results load
+                    await randomDelay(500, 1000);
+                    await simulateHumanBehavior(page);
 
                     // Step 5: Extract search results
                     const searchResults = await withRetry(async () => {
@@ -842,6 +919,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                     // Step 1: Navigate to Google Scholar search page
                     await safePageNavigation(page, 'https://scholar.google.com');
 
+                    // Simulate human behavior
+                    await randomDelay(800, 1500);
+                    await simulateHumanBehavior(page);
+
                     // Step 2: Find and interact with search input
                     await withRetry(async () => {
                         // Wait for search input element to appear
@@ -849,6 +930,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                         .catch(() => {
                             throw new Error('Scholar search input not found');
                         });
+
+                        // Random delay before interacting
+                        await randomDelay(300, 700);
 
                         // Find the search input element
                         const searchInput = await page.$('input[name="q"]');
@@ -858,11 +942,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                             throw new Error('Scholar search input element not found after waiting');
                         }
 
-                        // Step 3: Enter search query
+                        // Step 3: Enter search query with human-like typing
+                        await searchInput.click();
+                        await randomDelay(100, 300);
                         await searchInput.click({ clickCount: 3 });  // Select all existing text
+                        await randomDelay(50, 150);
                         await searchInput.press('Backspace');        // Clear selected text
-                        await searchInput.type(query);               // Type new query
+                        await randomDelay(200, 400);
+
+                        // Type query with random delays between characters
+                        for (const char of query) {
+                            await searchInput.type(char);
+                            await randomDelay(50, 150);
+                        }
                     }, 3, 2000);  // Allow 3 retries with 2s delay
+
+                    // Random delay before submitting
+                    await randomDelay(400, 900);
 
                     // Step 4: Submit search and wait for results
                     await withRetry(async () => {
@@ -871,6 +967,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                                           page.waitForLoadState('networkidle', { timeout: 15000 }),
                         ]);
                     });
+
+                    // Simulate human behavior after results load
+                    await randomDelay(500, 1000);
+                    await simulateHumanBehavior(page);
 
                     // Step 5: Extract scholar search results
                     const scholarResults = await withRetry(async () => {
@@ -1213,6 +1313,8 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
 // In the ensureBrowser function, modify the initialization script:
 async function ensureBrowser(): Promise<Page> {
     if (!browser) {
+        const viewport = getRandomViewport();
+
         browser = await chromium.launch({
             headless: true,
             args: [
@@ -1222,46 +1324,192 @@ async function ensureBrowser(): Promise<Page> {
                 '--disable-setuid-sandbox',
                 '--no-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
                 '--no-first-run',
                 '--no-service-autorun',
                 '--password-store=basic',
-                '--system-developer-mode',
                 '--enable-javascript',
-                `--window-size=${1366 + Math.floor(Math.random() * 100)},${768 + Math.floor(Math.random() * 100)}`,
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                `--window-size=${viewport.width},${viewport.height}`,
             ]
         });
 
+        const userAgent = getRandomUserAgent();
+        const deviceScaleFactor = getRandomDeviceScaleFactor();
+        const chromeVersion = getRandomChromeVersion();
+
         const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                                                 viewport: { width: 1366, height: 768 },  // Set fixed viewport instead of null
-                                                 deviceScaleFactor: 1,
-                                                 javaScriptEnabled: true,
+            userAgent,
+            viewport,
+            deviceScaleFactor,
+            javaScriptEnabled: true,
+            locale: 'en-US',
+            timezoneId: 'America/New_York',
+            permissions: ['notifications'],
         });
 
-        await context.addInitScript(() => {
+        await context.addInitScript((args) => {
+            const { chromeVersion } = args;
+
+            // Override webdriver property
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
 
+            // Override permissions
             Object.defineProperty(navigator, 'permissions', {
                 get: () => ({
                     query: async () => ({ state: 'prompt' as PermissionState })
                 })
             });
 
+            // Add Chrome object
             window.chrome = {
                 runtime: {},
                 loadTimes: function(){},
-                                    csi: function(){},
-                                    app: {},
+                csi: function(){},
+                app: {},
             };
 
+            // Override platform
+            Object.defineProperty(navigator, 'platform', {
+                get: () => 'Win32'
+            });
+
+            // Override hardware concurrency
+            Object.defineProperty(navigator, 'hardwareConcurrency', {
+                get: () => 8
+            });
+
+            // Override device memory
+            Object.defineProperty(navigator, 'deviceMemory', {
+                get: () => 8
+            });
+
+            // Override languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+
+            // Override plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    {
+                        0: { type: "application/x-google-chrome-pdf", suffixes: "pdf", description: "Portable Document Format" },
+                        description: "Portable Document Format",
+                        filename: "internal-pdf-viewer",
+                        length: 1,
+                        name: "Chrome PDF Plugin"
+                    },
+                    {
+                        0: { type: "application/pdf", suffixes: "pdf", description: "Portable Document Format" },
+                        description: "Portable Document Format",
+                        filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
+                        length: 1,
+                        name: "Chrome PDF Viewer"
+                    },
+                    {
+                        0: { type: "application/x-nacl", suffixes: "", description: "Native Client Executable" },
+                        1: { type: "application/x-pnacl", suffixes: "", description: "Portable Native Client Executable" },
+                        description: "Native Client",
+                        filename: "internal-nacl-plugin",
+                        length: 2,
+                        name: "Native Client"
+                    }
+                ]
+            });
+
+            // Canvas fingerprint randomization
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+            const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+
+            const noise = () => {
+                const shift = Math.floor(Math.random() * 10) - 5;
+                return shift;
+            };
+
+            HTMLCanvasElement.prototype.toDataURL = function(type?: string) {
+                const context = this.getContext('2d');
+                if (context) {
+                    const imageData = context.getImageData(0, 0, this.width, this.height);
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        imageData.data[i] += noise();
+                        imageData.data[i + 1] += noise();
+                        imageData.data[i + 2] += noise();
+                    }
+                    context.putImageData(imageData, 0, 0);
+                }
+                return originalToDataURL.apply(this, [type]);
+            };
+
+            CanvasRenderingContext2D.prototype.getImageData = function(sx: number, sy: number, sw: number, sh: number) {
+                const imageData = originalGetImageData.apply(this, [sx, sy, sw, sh]);
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    imageData.data[i] += noise();
+                    imageData.data[i + 1] += noise();
+                    imageData.data[i + 2] += noise();
+                }
+                return imageData;
+            };
+
+            // WebGL fingerprint randomization
+            const getParameterProxyHandler = {
+                apply: function(target: any, thisArg: any, args: any[]) {
+                    const param = args[0];
+                    const result = Reflect.apply(target, thisArg, args);
+
+                    // Randomize UNMASKED_VENDOR_WEBGL and UNMASKED_RENDERER_WEBGL
+                    if (param === 37445) {
+                        return 'Intel Inc.';
+                    }
+                    if (param === 37446) {
+                        return 'Intel Iris OpenGL Engine';
+                    }
+                    return result;
+                }
+            };
+
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = new Proxy(getParameter, getParameterProxyHandler);
+
+            // Audio context fingerprint protection
+            const audioContext = window.AudioContext || (window as any).webkitAudioContext;
+            if (audioContext) {
+                const OriginalAnalyser = audioContext.prototype.createAnalyser;
+                audioContext.prototype.createAnalyser = function() {
+                    const analyser = OriginalAnalyser.call(this);
+                    const original = analyser.getFloatFrequencyData;
+                    analyser.getFloatFrequencyData = function(array: Float32Array<ArrayBuffer>) {
+                        original.call(this, array);
+                        for (let i = 0; i < array.length; i++) {
+                            array[i] += Math.random() * 0.0001;
+                        }
+                    };
+                    return analyser;
+                };
+            }
+
+            // Battery API spoofing
+            Object.defineProperty(navigator, 'getBattery', {
+                value: async () => ({
+                    charging: true,
+                    chargingTime: 0,
+                    dischargingTime: Infinity,
+                    level: 1,
+                    addEventListener: () => {},
+                    removeEventListener: () => {},
+                    dispatchEvent: () => true
+                })
+            });
+
+            // Clean error stack traces
             const originalToString = Error.prototype.toString;
             Error.prototype.toString = function(this: Error) {
-                return originalToString.call(this).replace(/\n.*puppeteer.*\n/g, '\n');
+                return originalToString.call(this).replace(/\n.*(puppeteer|playwright).*\n/g, '\n');
             };
 
+            // Notification API
             if (!window.Notification) {
                 const NotificationClass = function(title: string, options?: NotificationOptions) {
                     return {
@@ -1287,27 +1535,52 @@ async function ensureBrowser(): Promise<Page> {
                 });
             }
 
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
+            // Media devices
+            Object.defineProperty(navigator, 'mediaDevices', {
+                get: () => ({
+                    enumerateDevices: async () => [],
+                    getUserMedia: async () => null,
+                    getDisplayMedia: async () => null,
+                })
             });
-        });
+
+            // Connection API
+            Object.defineProperty(navigator, 'connection', {
+                get: () => ({
+                    effectiveType: '4g',
+                    rtt: 100,
+                    downlink: 10,
+                    saveData: false
+                })
+            });
+
+        }, { chromeVersion });
 
         page = await context.newPage();
 
+        // Enhanced header handling
         await page.route('**', async (route) => {
             const request = route.request();
-            if (request.resourceType() === 'script') {
-                route.continue({
-                    headers: {
-                        ...request.headers(),
-                               'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                               'sec-ch-ua-mobile': '?0',
-                               'sec-ch-ua-platform': '"Windows"'
-                    }
-                });
-            } else {
-                route.continue();
+            const headers: Record<string, string> = {
+                ...request.headers(),
+                'sec-ch-ua': `"Not_A Brand";v="8", "Chromium";v="${chromeVersion}", "Google Chrome";v="${chromeVersion}"`,
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-ch-ua-platform-version': '"10.0.0"',
+                'sec-fetch-dest': request.resourceType() === 'document' ? 'document' : 'empty',
+                'sec-fetch-mode': 'navigate',
+                'sec-fetch-site': 'none',
+                'upgrade-insecure-requests': '1',
+                'accept-language': 'en-US,en;q=0.9',
+                'accept-encoding': 'gzip, deflate, br',
+            };
+
+            // Add accept header based on resource type
+            if (request.resourceType() === 'document') {
+                headers['accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
             }
+
+            route.continue({ headers });
         });
     }
 
