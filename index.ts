@@ -862,12 +862,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
 
                     // Step 5: Check for bot detection before extracting results
                     const pageCheck = await page.evaluate(() => {
+                        // Check for results using multiple selectors
+                        const hasResults = document.querySelectorAll('div.g').length > 0 ||
+                                          document.querySelectorAll('div[data-hveid]').length > 0 ||
+                                          document.querySelectorAll('.MjjYud').length > 0 ||
+                                          document.querySelectorAll('div.Gx5Zad').length > 0;
+
                         return {
                             title: document.title,
                             hasCaptcha: !!document.querySelector('#captcha-form') ||
                                        !!document.querySelector('iframe[src*="recaptcha"]') ||
                                        document.body.innerText.includes('unusual traffic'),
-                            hasResults: document.querySelectorAll('div.g').length > 0,
+                            hasResults: hasResults,
                             bodyText: document.body.innerText.substring(0, 500)
                         };
                     });
@@ -883,29 +889,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolRes
                     // Step 6: Extract search results
                     const searchResults = await withRetry(async () => {
                         const results = await page.evaluate(() => {
-                            // Find all search result containers
-                            const elements = document.querySelectorAll('div.g');
+                            // Try multiple selectors for search result containers (Google changes these frequently)
+                            const possibleSelectors = [
+                                'div.g',              // Classic selector
+                                'div[data-hveid]',    // Modern selector with tracking ID
+                                'div.Gx5Zad',         // Alternative container
+                                '.MjjYud',            // Another common container
+                            ];
+
+                            let elements: NodeListOf<Element> | null = null;
+                            for (const selector of possibleSelectors) {
+                                elements = document.querySelectorAll(selector);
+                                if (elements && elements.length > 0) {
+                                    break;
+                                }
+                            }
+
                             if (!elements || elements.length === 0) {
-                                throw new Error('No search results found');
+                                throw new Error('No search results found with any known selector');
                             }
 
                             // Extract data from each result
                             return Array.from(elements).map((el) => {
-                                // Find required elements within result container
-                                const titleEl = el.querySelector('h3');            // Title element
-                                const linkEl = el.querySelector('a');              // Link element
-                                const snippetEl = el.querySelector('div.VwiC3b');  // Snippet element
+                                // Find title - try multiple selectors
+                                const titleEl = el.querySelector('h3') ||
+                                               el.querySelector('h2') ||
+                                               el.querySelector('[role="heading"]');
+
+                                // Find link - look for main link
+                                const linkEl = el.querySelector('a[href]');
+
+                                // Find snippet - try multiple selectors
+                                const snippetEl = el.querySelector('div.VwiC3b') ||
+                                                 el.querySelector('.IsZvec') ||
+                                                 el.querySelector('[data-content-feature]') ||
+                                                 el.querySelector('div[style*="line-clamp"]');
 
                                 // Skip results missing required elements
-                                if (!titleEl || !linkEl || !snippetEl) {
+                                if (!titleEl || !linkEl) {
+                                    return null;
+                                }
+
+                                const url = linkEl.getAttribute('href') || '';
+
+                                // Skip non-http URLs (like javascript:, data:, etc.)
+                                if (!url.startsWith('http')) {
                                     return null;
                                 }
 
                                 // Return structured result data
                                 return {
-                                    title: titleEl.textContent || '',        // Result title
-                                    url: linkEl.getAttribute('href') || '',  // Result URL
-                                                            snippet: snippetEl.textContent || '',    // Result description
+                                    title: titleEl.textContent?.trim() || '',
+                                    url: url,
+                                    snippet: snippetEl?.textContent?.trim() || '',
                                 };
                             }).filter(result => result !== null);  // Remove invalid results
                         });
